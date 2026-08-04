@@ -309,6 +309,9 @@ fun EpisodeRow(
     isPlayed: Boolean,
     onEpisodeClick: (Episode) -> Unit
 ) {
+    // Clean up pubDate by removing common timezone strings for the Phone UI
+    val cleanPubDate = episode.pubDate.replace(" +0000", "").replace(" GMT", "")
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -332,7 +335,7 @@ fun EpisodeRow(
                     color = if (isPlayed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = episode.pubDate,
+                    text = cleanPubDate,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp)
                 )
