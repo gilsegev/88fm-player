@@ -102,26 +102,31 @@ class PlaybackService : MediaLibraryService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
             ): MediaSession.ConnectionResult {
+                // Get default permissions (standard playback + library browsing)
                 val connectionResult = super.onConnect(session, controller)
+                Log.d(TAG, "onConnect from ${controller.packageName}. Browsable: ${connectionResult.availableSessionCommands.contains(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN)}")
+                
+                // Add seek commands and custom curation commands
+                val playerCommands = connectionResult.availablePlayerCommands.buildUpon()
+                    .add(Player.COMMAND_SEEK_FORWARD)
+                    .add(Player.COMMAND_SEEK_BACK)
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .build()
                 
                 val sessionCommands = connectionResult.availableSessionCommands.buildUpon()
                     .add(SessionCommand(ACTION_THUMBS_UP, Bundle.EMPTY))
                     .add(SessionCommand(ACTION_THUMBS_DOWN, Bundle.EMPTY))
-                    .build()
-
-                val playerCommands = connectionResult.availablePlayerCommands.buildUpon()
-                    .add(Player.COMMAND_SEEK_FORWARD)
-                    .add(Player.COMMAND_SEEK_BACK)
                     .build()
                 
                 val extras = connectionResult.sessionExtras ?: Bundle.EMPTY
                 val newExtras = Bundle(extras)
                 newExtras.putBoolean("android.media.playback.hint.SLOT_RESERVATION_SKIP_TO_PREVIOUS", true)
                 newExtras.putBoolean("android.media.playback.hint.SLOT_RESERVATION_SKIP_TO_NEXT", true)
-                
+
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                    .setAvailableSessionCommands(sessionCommands)
                     .setAvailablePlayerCommands(playerCommands)
+                    .setAvailableSessionCommands(sessionCommands)
                     .setSessionExtras(newExtras)
                     .build()
             }
@@ -132,21 +137,56 @@ class PlaybackService : MediaLibraryService() {
                 customCommand: SessionCommand,
                 args: Bundle
             ): ListenableFuture<SessionResult> {
-                val mediaId = player.currentMediaItem?.mediaId ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+                val mediaId = player.currentMediaItem?.mediaId 
+                Log.d(TAG, "onCustomCommand: ${customCommand.customAction} for mediaId: $mediaId")
+                
+                if (mediaId == null) {
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+                }
+                
+                val librarySession = session as MediaLibrarySession
                 
                 when (customCommand.customAction) {
                     ACTION_THUMBS_UP -> {
                         serviceScope.launch {
                             dataRepository.toggleLiked(mediaId)
+                            
+                            // 1. Update the buttons immediately
                             updateCustomLayout()
+                            
+                            // 2. Update the list immediately (to show the heart)
+                            librarySession.notifyChildrenChanged("root", 0, null)
+                            
+                            // 3. Update current item metadata immediately (to show heart in player title)
+                            val isLikedNow = dataRepository.isLiked(mediaId).first()
+                            val currentItem = player.currentMediaItem
+                            if (currentItem != null && currentItem.mediaId == mediaId) {
+                                val episodes = rssRepository.fetchEpisodes().getOrNull()
+                                val updatedItem = episodes?.find { it.id == mediaId }?.toMediaItem(
+                                    isPlayed = true,
+                                    isLiked = isLikedNow
+                                ) ?: currentItem
+                                
+                                val currentIndex = player.currentMediaItemIndex
+                                val currentPos = player.currentPosition
+                                player.replaceMediaItem(currentIndex, updatedItem)
+                                player.seekTo(currentIndex, currentPos)
+                                player.prepare()
+                                player.play()
+                            }
                         }
                     }
                     ACTION_THUMBS_DOWN -> {
                         serviceScope.launch {
+                            // 1. Persist the dislike
                             dataRepository.markDisliked(mediaId)
-                            player.seekToNext()
-                            session as MediaLibrarySession
-                            session.notifyChildrenChanged("root", 0, null)
+                            
+                            // 2. Kill playback and remove from queue immediately
+                            val currentIndex = player.currentMediaItemIndex
+                            player.removeMediaItem(currentIndex)
+                            
+                            // 3. Update the list immediately (to hide the episode)
+                            librarySession.notifyChildrenChanged("root", 0, null)
                         }
                     }
                 }
@@ -284,17 +324,18 @@ class PlaybackService : MediaLibraryService() {
         val mediaId = player.currentMediaItem?.mediaId ?: return
         serviceScope.launch {
             val isLiked = dataRepository.isLiked(mediaId).first()
+            Log.d(TAG, "updateCustomLayout: isLiked=$isLiked for $mediaId")
             
             val thumbsUpButton = CommandButton.Builder()
                 .setSessionCommand(SessionCommand(ACTION_THUMBS_UP, Bundle.EMPTY))
-                .setIconResId(if (isLiked) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off)
+                .setIconResId(if (isLiked) R.drawable.ic_thumb_up_filled else R.drawable.ic_thumb_up)
                 .setDisplayName(if (isLiked) "Liked" else "Like")
                 .setEnabled(true)
                 .build()
 
             val thumbsDownButton = CommandButton.Builder()
                 .setSessionCommand(SessionCommand(ACTION_THUMBS_DOWN, Bundle.EMPTY))
-                .setIconResId(android.R.drawable.ic_menu_close_clear_cancel)
+                .setIconResId(R.drawable.ic_thumb_down)
                 .setDisplayName("Dislike")
                 .setEnabled(true)
                 .build()
