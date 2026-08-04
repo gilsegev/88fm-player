@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
@@ -172,7 +174,7 @@ fun PlayerScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.Start)) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
         }
 
         AsyncImage(
@@ -216,14 +218,26 @@ fun PlayerScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
+        // Playback Controls
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            IconButton(onClick = { controller?.seekToPrevious() }, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "Previous")
+            // Skip Previous (Track)
+            IconButton(onClick = { controller?.seekToPrevious() }) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "Previous Track")
             }
 
+            // Seek Back 30s
+            IconButton(onClick = { controller?.seekBack() }, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Replay30,
+                    contentDescription = "Seek Back 30s",
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            // Play/Pause
             FilledIconButton(
                 onClick = {
                     if (isPlaying) controller?.pause() else controller?.play()
@@ -237,8 +251,18 @@ fun PlayerScreen(
                 )
             }
 
-            IconButton(onClick = { controller?.seekToNext() }, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.SkipNext, contentDescription = "Next")
+            // Seek Forward 30s
+            IconButton(onClick = { controller?.seekForward() }, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Forward30,
+                    contentDescription = "Seek Forward 30s",
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            // Skip Next (Track)
+            IconButton(onClick = { controller?.seekToNext() }) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Next Track")
             }
         }
         
