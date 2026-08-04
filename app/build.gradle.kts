@@ -59,6 +59,10 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     
+    implementation(libs.okhttp)
+    implementation(libs.coil.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    
     // Media3 dependencies
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)

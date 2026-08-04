@@ -1,87 +1,119 @@
 package com.example.player88
 
-import android.content.ComponentName
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 
 class MainActivity : ComponentActivity() {
-    private var controllerFuture: ListenableFuture<MediaController>? = null
-    private val controller: MediaController?
-        get() = if (controllerFuture?.isDone == true) controllerFuture?.get() else null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
-
+        enableEdgeToEdge()
         setContent {
-            var isPlaying by remember { mutableStateOf(false) }
-            
-            LaunchedEffect(Unit) {
-                controllerFuture?.addListener({
-                    val controller = controllerFuture?.get()
-                    controller?.addListener(object : Player.Listener {
-                        override fun onIsPlayingChanged(playing: Boolean) {
-                            isPlaying = playing
-                        }
-                    })
-                    isPlaying = controller?.isPlaying == true
-                }, MoreExecutors.directExecutor())
-            }
+            MaterialTheme {
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    val viewModel: MainViewModel = viewModel()
+                    val uiState by viewModel.uiState.collectAsState()
 
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(text = "88 Player", style = MaterialTheme.typography.headlineMedium)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = {
-                        val player = controller
-                        if (player != null) {
-                            if (player.isPlaying) {
-                                player.pause()
-                            } else {
-                                if (player.mediaItemCount == 0) {
-                                    val mediaItem = MediaItem.Builder()
-                                        .setMediaId("loop_88_test")
-                                        .setUri("https://traffic.omny.fm/d/clips/23f697a0-7e6a-4e96-a223-a82c00962b12/a888a279-9911-4085-9a92-ab3900a0c251/d24f4a07-fd81-4112-b862-b49900f8b418/audio.mp3?utm_source=Podcast&in_playlist=425d386f-3564-4ec5-95d3-ab3900a0c251")
-                                        .build()
-                                    player.setMediaItem(mediaItem)
-                                    player.prepare()
-                                }
-                                player.play()
+                    Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                        when (val state = uiState) {
+                            is MainUiState.Loading -> {
+                                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                            }
+                            is MainUiState.Success -> {
+                                EpisodeList(state.episodes)
+                            }
+                            is MainUiState.Error -> {
+                                ErrorView(state.message) { viewModel.fetchFeed() }
                             }
                         }
-                    }) {
-                        Text(text = if (isPlaying) "Pause" else "Play")
                     }
                 }
             }
         }
     }
+}
 
-    override fun onDestroy() {
-        super.onDestroy()
-        controllerFuture?.let {
-            MediaController.releaseFuture(it)
+@Composable
+fun EpisodeList(episodes: List<Episode>) {
+    LazyColumn {
+        items(episodes, key = { it.id }) { episode ->
+            EpisodeRow(episode)
+        }
+    }
+}
+
+@Composable
+fun EpisodeRow(episode: Episode) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+    ) {
+        Row(modifier = Modifier.padding(8.dp)) {
+            AsyncImage(
+                model = episode.imageUrl,
+                contentDescription = null,
+                modifier = Modifier.size(80.dp),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = episode.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2
+                )
+                Text(
+                    text = episode.pubDate,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "${episode.duration / 60} minutes",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ErrorView(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(text = "Error: $message", color = MaterialTheme.colorScheme.error)
+        Button(onClick = onRetry) {
+            Text("Retry")
         }
     }
 }
