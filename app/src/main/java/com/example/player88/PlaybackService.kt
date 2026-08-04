@@ -194,6 +194,7 @@ class PlaybackService : MediaLibraryService() {
                     .setMediaId("root")
                     .setMediaMetadata(
                         MediaMetadata.Builder()
+                            .setTitle("UVU fm")
                             .setIsBrowsable(true)
                             .setIsPlayable(false)
                             .build()
