@@ -1,11 +1,13 @@
 package com.example.player88
 
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -43,8 +45,13 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         dataRepository = PlaybackDataRepository(applicationContext)
         
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+            .build()
+
         player = ExoPlayer.Builder(this)
-            .setAudioAttributes(AudioAttributes.DEFAULT,  /* handleAudioFocus= */ true)
+            .setAudioAttributes(audioAttributes,  /* handleAudioFocus= */ true)
             .setSeekForwardIncrementMs(30000)
             .setSeekBackIncrementMs(30000)
             .build()
@@ -64,6 +71,15 @@ class PlaybackService : MediaLibraryService() {
                 reason: Int
             ) {
                 saveCurrentPosition()
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("PlaybackService", "Player error: ${error.errorCodeName}", error)
+                if (error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) {
+                    // Stop player on network errors to prevent infinite buffering
+                    player.stop()
+                }
             }
         })
 
@@ -99,12 +115,24 @@ class PlaybackService : MediaLibraryService() {
 
                 val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
                 serviceScope.launch {
-                    rssRepository.fetchEpisodes().onSuccess { episodes ->
-                        cachedEpisodes = episodes
-                        val mediaItems = episodes.map { it.toMediaItem() }
-                        future.set(LibraryResult.ofItemList(ImmutableList.copyOf(mediaItems), params))
-                    }.onFailure {
-                        future.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_IO))
+                    try {
+                        rssRepository.fetchEpisodes().onSuccess { episodes ->
+                            cachedEpisodes = episodes
+                            val mediaItems = episodes.map { it.toMediaItem() }
+                            future.set(LibraryResult.ofItemList(ImmutableList.copyOf(mediaItems), params))
+                        }.onFailure { error ->
+                            Log.e("PlaybackService", "Failed to fetch episodes", error)
+                            // Graceful fallback: Return cached episodes if available, or empty list
+                            val items = if (cachedEpisodes.isNotEmpty()) {
+                                cachedEpisodes.map { it.toMediaItem() }
+                            } else {
+                                emptyList()
+                            }
+                            future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PlaybackService", "Exception in onGetChildren", e)
+                        future.set(LibraryResult.ofItemList(ImmutableList.of(), params))
                     }
                 }
                 return future
