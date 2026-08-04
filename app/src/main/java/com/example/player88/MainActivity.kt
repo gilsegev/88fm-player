@@ -34,11 +34,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,6 +58,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -134,6 +138,8 @@ fun PlayerScreen(
     onBack: () -> Unit
 ) {
     var isPlaying by remember { mutableStateOf(controller?.isPlaying ?: false) }
+    var currentPosition by remember { mutableLongStateOf(controller?.currentPosition ?: 0L) }
+    var duration by remember { mutableLongStateOf(controller?.duration ?: 0L) }
 
     // Listen to player state changes
     DisposableEffect(controller) {
@@ -141,9 +147,24 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
             }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                duration = controller?.duration ?: 0L
+            }
         }
         controller?.addListener(listener)
         onDispose { controller?.removeListener(listener) }
+    }
+
+    // Polling progress loop
+    LaunchedEffect(controller, isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                currentPosition = controller?.currentPosition ?: 0L
+                val playerDuration = controller?.duration ?: 0L
+                duration = if (playerDuration > 0) playerDuration else duration
+                delay(1000)
+            }
+        }
     }
 
     Column(
@@ -167,12 +188,31 @@ fun PlayerScreen(
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
-        Text(
-            text = episode.pubDate,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp)
-        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Progress Bar
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Slider(
+                value = if (duration > 0) currentPosition.toFloat() / duration else 0f,
+                onValueChange = { ratio ->
+                    if (duration > 0) {
+                        currentPosition = (ratio * duration).toLong()
+                    }
+                },
+                onValueChangeFinished = {
+                    controller?.seekTo(currentPosition)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(text = formatTime(currentPosition), style = MaterialTheme.typography.bodySmall)
+                Text(text = formatTime(duration), style = MaterialTheme.typography.bodySmall)
+            }
+        }
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -204,6 +244,13 @@ fun PlayerScreen(
         
         Spacer(modifier = Modifier.height(48.dp))
     }
+}
+
+fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%02d:%02d".format(minutes, seconds)
 }
 
 @Composable
