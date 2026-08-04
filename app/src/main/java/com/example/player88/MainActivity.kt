@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forward30
@@ -54,6 +56,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -93,7 +97,14 @@ class MainActivity : ComponentActivity() {
 
             MaterialTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val viewModel: MainViewModel = viewModel()
+                    val dataRepository = remember { PlaybackDataRepository(context) }
+                    val viewModel: MainViewModel = viewModel(
+                        factory = object : ViewModelProvider.Factory {
+                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                return MainViewModel(dataRepository = dataRepository) as T
+                            }
+                        }
+                    )
                     val uiState by viewModel.uiState.collectAsState()
 
                     Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
@@ -111,10 +122,12 @@ class MainActivity : ComponentActivity() {
                                 is MainUiState.Success -> {
                                     EpisodeList(
                                         episodes = state.episodes,
+                                        playedStatuses = state.playedStatuses,
                                         onEpisodeClick = { episode ->
                                             currentEpisode = episode
+                                            viewModel.markAsPlayed(episode.id)
                                             controller?.apply {
-                                                setMediaItem(episode.toMediaItem())
+                                                setMediaItem(episode.toMediaItem(isPlayed = true))
                                                 prepare()
                                                 play()
                                             }
@@ -170,7 +183,7 @@ fun PlayerScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.Start)) {
@@ -216,19 +229,17 @@ fun PlayerScreen(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(32.dp))
 
         // Playback Controls
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Skip Previous (Track)
             IconButton(onClick = { controller?.seekToPrevious() }) {
                 Icon(Icons.Default.SkipPrevious, contentDescription = "Previous Track")
             }
 
-            // Seek Back 30s
             IconButton(onClick = { controller?.seekBack() }, modifier = Modifier.size(48.dp)) {
                 Icon(
                     imageVector = Icons.Default.Replay30,
@@ -237,7 +248,6 @@ fun PlayerScreen(
                 )
             }
 
-            // Play/Pause
             FilledIconButton(
                 onClick = {
                     if (isPlaying) controller?.pause() else controller?.play()
@@ -251,7 +261,6 @@ fun PlayerScreen(
                 )
             }
 
-            // Seek Forward 30s
             IconButton(onClick = { controller?.seekForward() }, modifier = Modifier.size(48.dp)) {
                 Icon(
                     imageVector = Icons.Default.Forward30,
@@ -260,13 +269,10 @@ fun PlayerScreen(
                 )
             }
 
-            // Skip Next (Track)
             IconButton(onClick = { controller?.seekToNext() }) {
                 Icon(Icons.Default.SkipNext, contentDescription = "Next Track")
             }
         }
-        
-        Spacer(modifier = Modifier.height(48.dp))
     }
 }
 
@@ -278,23 +284,35 @@ fun formatTime(ms: Long): String {
 }
 
 @Composable
-fun EpisodeList(episodes: List<Episode>, onEpisodeClick: (Episode) -> Unit) {
+fun EpisodeList(
+    episodes: List<Episode>,
+    playedStatuses: Map<String, Boolean>,
+    onEpisodeClick: (Episode) -> Unit
+) {
     LazyColumn {
         items(episodes, key = { it.id }) { episode ->
-            EpisodeRow(episode, onEpisodeClick)
+            EpisodeRow(
+                episode = episode,
+                isPlayed = playedStatuses[episode.id] == true,
+                onEpisodeClick = onEpisodeClick
+            )
         }
     }
 }
 
 @Composable
-fun EpisodeRow(episode: Episode, onEpisodeClick: (Episode) -> Unit) {
+fun EpisodeRow(
+    episode: Episode,
+    isPlayed: Boolean,
+    onEpisodeClick: (Episode) -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clickable { onEpisodeClick(episode) }
     ) {
-        Row(modifier = Modifier.padding(12.dp)) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
                 model = episode.imageUrl,
                 contentDescription = null,
@@ -302,12 +320,13 @@ fun EpisodeRow(episode: Episode, onEpisodeClick: (Episode) -> Unit) {
                 contentScale = ContentScale.Crop
             )
             Spacer(modifier = Modifier.width(16.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = episode.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2
+                    maxLines = 2,
+                    color = if (isPlayed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = episode.pubDate,
@@ -317,6 +336,14 @@ fun EpisodeRow(episode: Episode, onEpisodeClick: (Episode) -> Unit) {
                 Text(
                     text = "${episode.duration / 60} minutes",
                     style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (isPlayed) {
+                Text(
+                    text = "✓",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
         }

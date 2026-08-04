@@ -10,7 +10,7 @@ class RssRepository(
     private val client: OkHttpClient = OkHttpClient(),
     private val parser: RssParser = RssParser()
 ) {
-    private val feedUrl = "https://www.omnycontent.com/d/playlist/23f697a0-7e6a-4e96-a223-a82c00962b12/a888a279-9911-4085-9a92-ab3900a0c129/425d386f-3564-4ec5-95d3-ab3900a0c251/podcast.rss"
+    private val feedUrl = "https://www.omnycontent.com/d/playlist/23f697a0-7e6a-4e96-a223-a82c00962b12/a888a279-9911-4085-9a92-ab3900a0c129/425d386f-3564-4ec5-95d3-ab3900a0c251/podcast.rss?limit=1000"
 
     suspend fun fetchEpisodes(): Result<List<Episode>> = withContext(Dispatchers.IO) {
         try {

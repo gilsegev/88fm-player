@@ -1,5 +1,6 @@
 package com.example.player88
 
+import android.util.Log
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
 import java.io.InputStream
@@ -7,21 +8,30 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 class RssParser {
+    companion object {
+        private const val TAG = "RssParser"
+    }
+
     fun parse(inputStream: InputStream): List<Episode> {
         val parser = Xml.newPullParser()
-        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false) // Easier for basic parsing
+        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
         parser.setInput(inputStream, null)
         
         val episodes = mutableListOf<Episode>()
         
-        var eventType = parser.eventType
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.name == "item") {
-                episodes.add(readItem(parser))
+        try {
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                if (eventType == XmlPullParser.START_TAG && parser.name == "item") {
+                    episodes.add(readItem(parser))
+                }
+                eventType = parser.next()
             }
-            eventType = parser.next()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing RSS", e)
         }
         
+        Log.d(TAG, "Parsed ${episodes.size} episodes")
         return episodes.sortedByDescending { parseDate(it.pubDate) }
     }
 
@@ -33,16 +43,18 @@ class RssParser {
         var duration = 0L
         var imageUrl = ""
 
-        while (!(parser.next() == XmlPullParser.END_TAG && parser.name == "item")) {
+        // We are currently at the START_TAG "item"
+        while (parser.next() != XmlPullParser.END_TAG) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
 
-            when (parser.name) {
+            val name = parser.name
+            when (name) {
                 "guid", "omny:clipId" -> id = readText(parser)
                 "title" -> title = readText(parser)
                 "pubDate" -> pubDate = readText(parser)
                 "enclosure" -> {
                     audioUrl = parser.getAttributeValue(null, "url") ?: ""
-                    parser.next() // consume start tag
+                    skip(parser)
                 }
                 "itunes:duration", "duration" -> {
                     val durationStr = readText(parser)
@@ -50,13 +62,13 @@ class RssParser {
                 }
                 "itunes:image" -> {
                     imageUrl = parser.getAttributeValue(null, "href") ?: ""
-                    parser.next() // consume start tag
+                    skip(parser)
                 }
                 "media:content" -> {
                     if (imageUrl.isEmpty()) {
                         imageUrl = parser.getAttributeValue(null, "url") ?: ""
                     }
-                    parser.next()
+                    skip(parser)
                 }
                 else -> skip(parser)
             }
@@ -75,7 +87,7 @@ class RssParser {
 
     private fun skip(parser: XmlPullParser) {
         if (parser.eventType != XmlPullParser.START_TAG) {
-            throw IllegalStateException()
+            return
         }
         var depth = 1
         while (depth != 0) {
@@ -107,11 +119,12 @@ class RssParser {
         val formats = listOf(
             SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US),
             SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US),
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss", Locale.US),
             SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
         )
         for (format in formats) {
             try {
-                return format.parse(dateStr)?.time ?: 0L
+                return format.parse(dateStr.trim())?.time ?: 0L
             } catch (e: Exception) {}
         }
         return 0L

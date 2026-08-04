@@ -2,8 +2,11 @@ package com.example.player88
 
 import android.net.Uri
 import android.os.Bundle
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaConstants
 
 data class Episode(
     val id: String,
@@ -14,21 +17,28 @@ data class Episode(
     val imageUrl: String
 )
 
-fun Episode.toMediaItem(): MediaItem {
+@OptIn(UnstableApi::class)
+fun Episode.toMediaItem(isPlayed: Boolean = false): MediaItem {
     val durationMs = duration * 1000L
+    val playedIndicator = if (isPlayed) "  ✓ Played" else ""
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(audioUrl)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
-                .setSubtitle("${pubDate} • ${duration / 60}m")
+                .setSubtitle("${pubDate} • ${duration / 60}m$playedIndicator")
                 .setArtworkUri(Uri.parse(imageUrl))
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(Bundle().apply {
-                    // Use standard metadata key for duration that Android Auto recognizes
                     putLong("android.media.metadata.DURATION", durationMs)
+                    if (isPlayed) {
+                        putInt(
+                            MediaConstants.EXTRAS_KEY_COMPLETION_STATUS,
+                            MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED
+                        )
+                    }
                 })
                 .build()
         )

@@ -164,9 +164,8 @@ class PlaybackService : MediaLibraryService() {
                     
                     serviceScope.launch {
                         val savedPosition = dataRepository.getPlaybackPosition(mediaId).first()
-                        val isPlayed = dataRepository.isPlayed(mediaId).first()
                         
-                        val resumePosition = if (savedPosition > 10000 && !isPlayed) {
+                        val resumePosition = if (savedPosition > 10000) {
                             savedPosition
                         } else {
                             0L
