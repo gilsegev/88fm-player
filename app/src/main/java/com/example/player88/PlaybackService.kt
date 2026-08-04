@@ -186,6 +186,12 @@ class PlaybackService : MediaLibraryService() {
                             player.removeMediaItem(currentIndex)
                             
                             // 3. Update the list immediately (to hide the episode)
+                            // Use empty LibraryParams to ensure a fresh reload
+                            val librarySession = session as MediaLibrarySession
+                            librarySession.notifyChildrenChanged("root", 0, null)
+                            
+                            // Force a notifyChildrenChanged for legacy clients or specific AA versions
+                            delay(500)
                             librarySession.notifyChildrenChanged("root", 0, null)
                         }
                     }
