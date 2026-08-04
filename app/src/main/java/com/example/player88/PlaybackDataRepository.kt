@@ -1,0 +1,75 @@
+package com.example.player88
+
+import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import java.io.IOException
+
+class PlaybackDataRepository(private val context: Context) {
+
+    private fun positionKey(episodeId: String) = longPreferencesKey("${episodeId}_position")
+    private fun playedKey(episodeId: String) = booleanPreferencesKey("${episodeId}_played")
+
+    suspend fun savePlaybackPosition(episodeId: String, positionMs: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[positionKey(episodeId)] = positionMs
+        }
+    }
+
+    suspend fun markAsPlayed(episodeId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[playedKey(episodeId)] = true
+            preferences[positionKey(episodeId)] = 0L
+        }
+    }
+
+    fun getPlaybackPosition(episodeId: String): Flow<Long> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[positionKey(episodeId)] ?: 0L
+            }
+    }
+
+    fun isPlayed(episodeId: String): Flow<Boolean> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[playedKey(episodeId)] ?: false
+            }
+    }
+
+    fun getAllPlayedStatuses(): Flow<Map<String, Boolean>> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences.asMap()
+                    .filterKeys { it.name.endsWith("_played") }
+                    .mapKeys { it.key.name.removeSuffix("_played") }
+                    .mapValues { it.value as Boolean }
+            }
+    }
+}

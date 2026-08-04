@@ -63,6 +63,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.datastore.preferences)
     
     // Media3 dependencies
     implementation(libs.androidx.media3.exoplayer)
