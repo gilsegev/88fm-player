@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
@@ -82,11 +84,19 @@ class MainActivity : ComponentActivity() {
             }
             var controller by remember { mutableStateOf<MediaController?>(null) }
             var currentEpisode by remember { mutableStateOf<Episode?>(null) }
+            var activeMediaItem by remember { mutableStateOf<MediaItem?>(null) }
 
             DisposableEffect(sessionToken) {
                 val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
                 controllerFuture.addListener({
-                    controller = controllerFuture.get()
+                    val c = controllerFuture.get()
+                    controller = c
+                    activeMediaItem = c.currentMediaItem
+                    c.addListener(object : Player.Listener {
+                        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                            activeMediaItem = mediaItem
+                        }
+                    })
                 }, MoreExecutors.directExecutor())
 
                 onDispose {
@@ -101,17 +111,39 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val dataRepository = remember { PlaybackDataRepository(context) }
-                    val viewModel: MainViewModel = viewModel(
-                        factory = object : ViewModelProvider.Factory {
-                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                return MainViewModel(dataRepository = dataRepository) as T
-                            }
+                val viewModel: MainViewModel = viewModel(
+                    factory = object : ViewModelProvider.Factory {
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            val dataRepository = PlaybackDataRepository(context)
+                            return MainViewModel(dataRepository = dataRepository) as T
                         }
-                    )
-                    val uiState by viewModel.uiState.collectAsState()
+                    }
+                )
+                val uiState by viewModel.uiState.collectAsState()
 
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    floatingActionButton = {
+                        // Only show FAB if we are on the list screen AND something is active in the player
+                        if (currentEpisode == null && activeMediaItem != null) {
+                            ExtendedFloatingActionButton(
+                                onClick = {
+                                    val state = uiState
+                                    if (state is MainUiState.Success) {
+                                        val episode = state.episodes.find { it.id == activeMediaItem?.mediaId }
+                                        if (episode != null) {
+                                            currentEpisode = episode
+                                        }
+                                    }
+                                },
+                                icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                                text = { Text("Now Playing") },
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                ) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                         if (currentEpisode != null) {
                             val isLiked = (uiState as? MainUiState.Success)?.likedStatuses?.get(currentEpisode!!.id) == true
