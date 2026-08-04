@@ -26,6 +26,9 @@ fun Episode.toMediaItem(isPlayed: Boolean = false, isLiked: Boolean = false): Me
     // Remove +0000 and GMT for a cleaner look in Phone and Auto UI
     val cleanPubDate = pubDate.replace(" +0000", "").replace(" GMT", "")
     
+    // Use the custom branding image for all playback metadata
+    val artworkUri = Uri.parse("android.resource://com.example.player88/drawable/uvu_playback_art")
+    
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(audioUrl)
@@ -33,7 +36,7 @@ fun Episode.toMediaItem(isPlayed: Boolean = false, isLiked: Boolean = false): Me
             MediaMetadata.Builder()
                 .setTitle("$title$likedIndicator")
                 .setSubtitle("${cleanPubDate} • ${duration / 60}m$playedIndicator")
-                .setArtworkUri(Uri.parse(imageUrl))
+                .setArtworkUri(artworkUri)
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setExtras(Bundle().apply {

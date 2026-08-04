@@ -243,7 +243,7 @@ fun PlayerScreen(
         }
 
         AsyncImage(
-            model = episode.imageUrl,
+            model = R.drawable.uvu_playback_art,
             contentDescription = null,
             modifier = Modifier.size(300.dp).padding(vertical = 32.dp),
             contentScale = ContentScale.Crop
