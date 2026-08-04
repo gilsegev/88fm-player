@@ -2,6 +2,7 @@ package com.example.player88
 
 import android.content.ComponentName
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -117,9 +118,11 @@ class MainActivity : ComponentActivity() {
                         } else {
                             when (val state = uiState) {
                                 is MainUiState.Loading -> {
+                                    Log.d("MainActivity", "UI State: Loading")
                                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                                 }
                                 is MainUiState.Success -> {
+                                    Log.d("MainActivity", "UI State: Success (${state.episodes.size} episodes)")
                                     EpisodeList(
                                         episodes = state.episodes,
                                         playedStatuses = state.playedStatuses,

@@ -1,10 +1,13 @@
 package com.example.player88
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed class MainUiState {
@@ -21,31 +24,43 @@ class MainViewModel(
     private val dataRepository: PlaybackDataRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<MainUiState>(MainUiState.Loading)
-    val uiState: StateFlow<MainUiState> = _uiState
+    private val _episodes = MutableStateFlow<List<Episode>?>(null)
+    private val _error = MutableStateFlow<String?>(null)
+
+    val uiState: StateFlow<MainUiState> = combine(
+        _episodes,
+        dataRepository.getAllPlayedStatuses(),
+        _error
+    ) { episodes, statuses, error ->
+        Log.d("MainViewModel", "Combining: episodes=${episodes?.size}, error=$error")
+        when {
+            error != null -> MainUiState.Error(error)
+            episodes != null -> MainUiState.Success(episodes, statuses)
+            else -> MainUiState.Loading
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = MainUiState.Loading
+    )
 
     init {
-        viewModelScope.launch {
-            dataRepository.getAllPlayedStatuses().collect { statuses ->
-                val current = _uiState.value
-                if (current is MainUiState.Success) {
-                    _uiState.value = current.copy(playedStatuses = statuses)
-                } else if (current is MainUiState.Loading) {
-                    fetchFeed()
-                }
-            }
-        }
+        Log.d("MainViewModel", "Initializing and fetching feed")
+        fetchFeed()
     }
 
     fun fetchFeed() {
         viewModelScope.launch {
+            _error.value = null
+            Log.d("MainViewModel", "Starting RSS fetch...")
             repository.fetchEpisodes()
                 .onSuccess { episodes ->
-                    val statuses = dataRepository.getAllPlayedStatuses().first()
-                    _uiState.value = MainUiState.Success(episodes, statuses)
+                    Log.d("MainViewModel", "Fetch success: ${episodes.size} episodes")
+                    _episodes.value = episodes
                 }
                 .onFailure { error ->
-                    _uiState.value = MainUiState.Error(error.message ?: "Unknown error")
+                    Log.e("MainViewModel", "Fetch failed", error)
+                    _error.value = error.message ?: "Unknown error"
                 }
         }
     }

@@ -21,13 +21,16 @@ data class Episode(
 fun Episode.toMediaItem(isPlayed: Boolean = false): MediaItem {
     val durationMs = duration * 1000L
     val playedIndicator = if (isPlayed) "  ✓ Played" else ""
+    // Remove +0000 and GMT for a cleaner look
+    val cleanPubDate = pubDate.replace(" +0000", "").replace(" GMT", "")
+    
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(audioUrl)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
-                .setSubtitle("${pubDate} • ${duration / 60}m$playedIndicator")
+                .setSubtitle("${cleanPubDate} • ${duration / 60}m$playedIndicator")
                 .setArtworkUri(Uri.parse(imageUrl))
                 .setIsPlayable(true)
                 .setIsBrowsable(false)

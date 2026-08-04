@@ -85,6 +85,35 @@ class PlaybackService : MediaLibraryService() {
         })
 
         mediaLibrarySession = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo
+            ): MediaSession.ConnectionResult {
+                // Get default permissions (standard playback + library browsing)
+                val connectionResult = super.onConnect(session, controller)
+                
+                // Add seek forward/back commands to the player permissions
+                val playerCommands = connectionResult.availablePlayerCommands.buildUpon()
+                    .add(Player.COMMAND_SEEK_FORWARD)
+                    .add(Player.COMMAND_SEEK_BACK)
+                    .build()
+                
+                // Preservation of session commands is critical for loading
+                val sessionCommands = connectionResult.availableSessionCommands
+                
+                // Use safe Bundle copy to avoid NPE
+                val extras = connectionResult.sessionExtras ?: Bundle.EMPTY
+                val newExtras = Bundle(extras)
+                newExtras.putBoolean("android.media.playback.hint.SLOT_RESERVATION_SKIP_TO_PREVIOUS", true)
+                newExtras.putBoolean("android.media.playback.hint.SLOT_RESERVATION_SKIP_TO_NEXT", true)
+
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailablePlayerCommands(playerCommands)
+                    .setAvailableSessionCommands(sessionCommands)
+                    .setSessionExtras(newExtras)
+                    .build()
+            }
+
             override fun onGetLibraryRoot(
                 session: MediaLibrarySession,
                 browser: MediaSession.ControllerInfo,
