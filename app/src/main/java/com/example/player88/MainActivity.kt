@@ -129,21 +129,29 @@ class MainActivity : ComponentActivity() {
                                 }
                                 is MainUiState.Success -> {
                                     Log.d("MainActivity", "UI State: Success (${state.episodes.size} episodes)")
-                                    EpisodeList(
-                                        episodes = state.episodes,
-                                        playedStatuses = state.playedStatuses,
-                                        likedStatuses = state.likedStatuses,
-                                        onEpisodeClick = { episode ->
-                                            currentEpisode = episode
-                                            viewModel.markAsPlayed(episode.id)
-                                            controller?.apply {
-                                                val isLiked = state.likedStatuses[episode.id] == true
-                                                setMediaItem(episode.toMediaItem(isPlayed = true, isLiked = isLiked))
-                                                prepare()
-                                                play()
-                                            }
+                                    Column {
+                                        Button(
+                                            onClick = { viewModel.clearAllCuration() },
+                                            modifier = Modifier.fillMaxWidth().padding(8.dp)
+                                        ) {
+                                            Text("Reset Disliked/Liked Episodes")
                                         }
-                                    )
+                                        EpisodeList(
+                                            episodes = state.episodes,
+                                            playedStatuses = state.playedStatuses,
+                                            likedStatuses = state.likedStatuses,
+                                            onEpisodeClick = { episode ->
+                                                currentEpisode = episode
+                                                viewModel.markAsPlayed(episode.id)
+                                                controller?.apply {
+                                                    val isLiked = state.likedStatuses[episode.id] == true
+                                                    setMediaItem(episode.toMediaItem(isPlayed = true, isLiked = isLiked))
+                                                    prepare()
+                                                    play()
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
                                 is MainUiState.Error -> {
                                     ErrorView(state.message) { viewModel.fetchFeed() }

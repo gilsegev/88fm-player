@@ -23,7 +23,7 @@ fun Episode.toMediaItem(isPlayed: Boolean = false, isLiked: Boolean = false): Me
     val playedIndicator = if (isPlayed) "  ✓ Played" else ""
     val likedIndicator = if (isLiked) " ❤️" else ""
     
-    // Remove +0000 and GMT for a cleaner look
+    // Remove +0000 and GMT for a cleaner look in Phone and Auto UI
     val cleanPubDate = pubDate.replace(" +0000", "").replace(" GMT", "")
     
     return MediaItem.Builder()

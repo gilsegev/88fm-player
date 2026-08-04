@@ -43,6 +43,15 @@ class PlaybackDataRepository(private val context: Context) {
         }
     }
 
+    suspend fun clearAllCuration() {
+        context.dataStore.edit { preferences ->
+            val keysToRemove = preferences.asMap().keys.filter { 
+                it.name.endsWith("_liked") || it.name.endsWith("_disliked") 
+            }
+            keysToRemove.forEach { preferences.remove(it) }
+        }
+    }
+
     fun getPlaybackPosition(episodeId: String): Flow<Long> {
         return context.dataStore.data
             .catch { exception ->

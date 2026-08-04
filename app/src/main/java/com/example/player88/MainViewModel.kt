@@ -76,4 +76,11 @@ class MainViewModel(
             dataRepository.markAsPlayed(episodeId)
         }
     }
+
+    fun clearAllCuration() {
+        viewModelScope.launch {
+            dataRepository.clearAllCuration()
+            fetchFeed()
+        }
+    }
 }
