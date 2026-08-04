@@ -18,9 +18,11 @@ data class Episode(
 )
 
 @OptIn(UnstableApi::class)
-fun Episode.toMediaItem(isPlayed: Boolean = false): MediaItem {
+fun Episode.toMediaItem(isPlayed: Boolean = false, isLiked: Boolean = false): MediaItem {
     val durationMs = duration * 1000L
     val playedIndicator = if (isPlayed) "  ✓ Played" else ""
+    val likedIndicator = if (isLiked) " ❤️" else ""
+    
     // Remove +0000 and GMT for a cleaner look
     val cleanPubDate = pubDate.replace(" +0000", "").replace(" GMT", "")
     
@@ -29,7 +31,7 @@ fun Episode.toMediaItem(isPlayed: Boolean = false): MediaItem {
         .setUri(audioUrl)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle(title)
+                .setTitle("$title$likedIndicator")
                 .setSubtitle("${cleanPubDate} • ${duration / 60}m$playedIndicator")
                 .setArtworkUri(Uri.parse(imageUrl))
                 .setIsPlayable(true)

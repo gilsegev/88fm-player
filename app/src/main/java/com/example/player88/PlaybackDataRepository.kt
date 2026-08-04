@@ -14,6 +14,8 @@ class PlaybackDataRepository(private val context: Context) {
 
     private fun positionKey(episodeId: String) = longPreferencesKey("${episodeId}_position")
     private fun playedKey(episodeId: String) = booleanPreferencesKey("${episodeId}_played")
+    private fun likedKey(episodeId: String) = booleanPreferencesKey("${episodeId}_liked")
+    private fun dislikedKey(episodeId: String) = booleanPreferencesKey("${episodeId}_disliked")
 
     suspend fun savePlaybackPosition(episodeId: String, positionMs: Long) {
         context.dataStore.edit { preferences ->
@@ -25,6 +27,19 @@ class PlaybackDataRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[playedKey(episodeId)] = true
             preferences[positionKey(episodeId)] = 0L
+        }
+    }
+
+    suspend fun toggleLiked(episodeId: String) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[likedKey(episodeId)] ?: false
+            preferences[likedKey(episodeId)] = !current
+        }
+    }
+
+    suspend fun markDisliked(episodeId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[dislikedKey(episodeId)] = true
         }
     }
 
@@ -56,6 +71,38 @@ class PlaybackDataRepository(private val context: Context) {
             }
     }
 
+    fun isLiked(episodeId: String): Flow<Boolean> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[likedKey(episodeId)] ?: false
+            }
+    }
+
+    fun getDislikedIds(): Flow<Set<String>> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences.asMap().keys
+                    .filter { it.name.endsWith("_disliked") }
+                    .filter { preferences[booleanPreferencesKey(it.name)] == true }
+                    .map { it.name.removeSuffix("_disliked") }
+                    .toSet()
+            }
+    }
+
     fun getAllPlayedStatuses(): Flow<Map<String, Boolean>> {
         return context.dataStore.data
             .catch { exception ->
@@ -69,6 +116,23 @@ class PlaybackDataRepository(private val context: Context) {
                 preferences.asMap()
                     .filterKeys { it.name.endsWith("_played") }
                     .mapKeys { it.key.name.removeSuffix("_played") }
+                    .mapValues { it.value as Boolean }
+            }
+    }
+
+    fun getAllLikedStatuses(): Flow<Map<String, Boolean>> {
+        return context.dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences.asMap()
+                    .filterKeys { it.name.endsWith("_liked") }
+                    .mapKeys { it.key.name.removeSuffix("_liked") }
                     .mapValues { it.value as Boolean }
             }
     }

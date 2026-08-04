@@ -12,10 +12,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -29,6 +32,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class PlaybackService : MediaLibraryService() {
+
+    companion object {
+        const val ACTION_THUMBS_UP = "com.example.player88.THUMBS_UP"
+        const val ACTION_THUMBS_DOWN = "com.example.player88.THUMBS_DOWN"
+        const val TAG = "PlaybackService"
+    }
 
     private var mediaLibrarySession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
@@ -82,6 +91,10 @@ class PlaybackService : MediaLibraryService() {
                     player.stop()
                 }
             }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                updateCustomLayout()
+            }
         })
 
         mediaLibrarySession = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
@@ -89,29 +102,55 @@ class PlaybackService : MediaLibraryService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
             ): MediaSession.ConnectionResult {
-                // Get default permissions (standard playback + library browsing)
                 val connectionResult = super.onConnect(session, controller)
                 
-                // Add seek forward/back commands to the player permissions
+                val sessionCommands = connectionResult.availableSessionCommands.buildUpon()
+                    .add(SessionCommand(ACTION_THUMBS_UP, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_THUMBS_DOWN, Bundle.EMPTY))
+                    .build()
+
                 val playerCommands = connectionResult.availablePlayerCommands.buildUpon()
                     .add(Player.COMMAND_SEEK_FORWARD)
                     .add(Player.COMMAND_SEEK_BACK)
                     .build()
                 
-                // Preservation of session commands is critical for loading
-                val sessionCommands = connectionResult.availableSessionCommands
-                
-                // Use safe Bundle copy to avoid NPE
                 val extras = connectionResult.sessionExtras ?: Bundle.EMPTY
                 val newExtras = Bundle(extras)
                 newExtras.putBoolean("android.media.playback.hint.SLOT_RESERVATION_SKIP_TO_PREVIOUS", true)
                 newExtras.putBoolean("android.media.playback.hint.SLOT_RESERVATION_SKIP_TO_NEXT", true)
-
+                
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                    .setAvailablePlayerCommands(playerCommands)
                     .setAvailableSessionCommands(sessionCommands)
+                    .setAvailablePlayerCommands(playerCommands)
                     .setSessionExtras(newExtras)
                     .build()
+            }
+
+            override fun onCustomCommand(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                customCommand: SessionCommand,
+                args: Bundle
+            ): ListenableFuture<SessionResult> {
+                val mediaId = player.currentMediaItem?.mediaId ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+                
+                when (customCommand.customAction) {
+                    ACTION_THUMBS_UP -> {
+                        serviceScope.launch {
+                            dataRepository.toggleLiked(mediaId)
+                            updateCustomLayout()
+                        }
+                    }
+                    ACTION_THUMBS_DOWN -> {
+                        serviceScope.launch {
+                            dataRepository.markDisliked(mediaId)
+                            player.seekToNext()
+                            session as MediaLibrarySession
+                            session.notifyChildrenChanged("root", 0, null)
+                        }
+                    }
+                }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
 
             override fun onGetLibraryRoot(
@@ -146,18 +185,31 @@ class PlaybackService : MediaLibraryService() {
                 val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
                 serviceScope.launch {
                     try {
+                        val playedStatuses = dataRepository.getAllPlayedStatuses().first()
+                        val likedStatuses = dataRepository.getAllLikedStatuses().first()
+                        val dislikedIds = dataRepository.getDislikedIds().first()
+                        
                         rssRepository.fetchEpisodes().onSuccess { episodes ->
                             cachedEpisodes = episodes
-                            val mediaItems = episodes.map { it.toMediaItem() }
+                            val mediaItems = episodes
+                                .filter { !dislikedIds.contains(it.id) }
+                                .map { episode ->
+                                    episode.toMediaItem(
+                                        isPlayed = playedStatuses[episode.id] == true,
+                                        isLiked = likedStatuses[episode.id] == true
+                                    )
+                                }
                             future.set(LibraryResult.ofItemList(ImmutableList.copyOf(mediaItems), params))
                         }.onFailure { error ->
                             Log.e("PlaybackService", "Failed to fetch episodes", error)
-                            // Graceful fallback: Return cached episodes if available, or empty list
-                            val items = if (cachedEpisodes.isNotEmpty()) {
-                                cachedEpisodes.map { it.toMediaItem() }
-                            } else {
-                                emptyList()
-                            }
+                            val items = cachedEpisodes
+                                .filter { !dislikedIds.contains(it.id) }
+                                .map { episode ->
+                                    episode.toMediaItem(
+                                        isPlayed = playedStatuses[episode.id] == true,
+                                        isLiked = likedStatuses[episode.id] == true
+                                    )
+                                }
                             future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
                         }
                     } catch (e: Exception) {
@@ -173,10 +225,20 @@ class PlaybackService : MediaLibraryService() {
                 controller: MediaSession.ControllerInfo,
                 mediaItems: MutableList<MediaItem>
             ): ListenableFuture<MutableList<MediaItem>> {
-                val updatedItems = mediaItems.map { item ->
-                    cachedEpisodes.find { it.id == item.mediaId }?.toMediaItem() ?: item
-                }.toMutableList()
-                return Futures.immediateFuture(updatedItems)
+                val future = SettableFuture.create<MutableList<MediaItem>>()
+                serviceScope.launch {
+                    val playedStatuses = dataRepository.getAllPlayedStatuses().first()
+                    val likedStatuses = dataRepository.getAllLikedStatuses().first()
+                    
+                    val updatedItems = mediaItems.map { item ->
+                        cachedEpisodes.find { it.id == item.mediaId }?.toMediaItem(
+                            isPlayed = playedStatuses[item.mediaId] == true,
+                            isLiked = likedStatuses[item.mediaId] == true
+                        ) ?: item
+                    }.toMutableList()
+                    future.set(updatedItems)
+                }
+                return future
             }
 
             override fun onSetMediaItems(
@@ -194,6 +256,8 @@ class PlaybackService : MediaLibraryService() {
                     
                     serviceScope.launch {
                         val savedPosition = dataRepository.getPlaybackPosition(mediaId).first()
+                        val isPlayed = dataRepository.isPlayed(mediaId).first()
+                        val isLiked = dataRepository.isLiked(mediaId).first()
                         
                         val resumePosition = if (savedPosition > 10000) {
                             savedPosition
@@ -201,7 +265,10 @@ class PlaybackService : MediaLibraryService() {
                             0L
                         }
                         
-                        val fullItem = cachedEpisodes.find { it.id == mediaId }?.toMediaItem() ?: item
+                        val fullItem = cachedEpisodes.find { it.id == mediaId }?.toMediaItem(
+                            isPlayed = isPlayed,
+                            isLiked = isLiked
+                        ) ?: item
                         future.set(MediaSession.MediaItemsWithStartPosition(listOf(fullItem), 0, resumePosition))
                     }
                     return future
@@ -210,6 +277,30 @@ class PlaybackService : MediaLibraryService() {
                 return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
             }
         }).build()
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun updateCustomLayout() {
+        val mediaId = player.currentMediaItem?.mediaId ?: return
+        serviceScope.launch {
+            val isLiked = dataRepository.isLiked(mediaId).first()
+            
+            val thumbsUpButton = CommandButton.Builder()
+                .setSessionCommand(SessionCommand(ACTION_THUMBS_UP, Bundle.EMPTY))
+                .setIconResId(if (isLiked) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off)
+                .setDisplayName(if (isLiked) "Liked" else "Like")
+                .setEnabled(true)
+                .build()
+
+            val thumbsDownButton = CommandButton.Builder()
+                .setSessionCommand(SessionCommand(ACTION_THUMBS_DOWN, Bundle.EMPTY))
+                .setIconResId(android.R.drawable.ic_menu_close_clear_cancel)
+                .setDisplayName("Dislike")
+                .setEnabled(true)
+                .build()
+
+            mediaLibrarySession?.setCustomLayout(listOf(thumbsUpButton, thumbsDownButton))
+        }
     }
 
     private fun startProgressSaving() {

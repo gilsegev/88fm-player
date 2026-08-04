@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay30
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,6 +65,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
@@ -110,9 +114,11 @@ class MainActivity : ComponentActivity() {
 
                     Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                         if (currentEpisode != null) {
+                            val isLiked = (uiState as? MainUiState.Success)?.likedStatuses?.get(currentEpisode!!.id) == true
                             PlayerScreen(
                                 episode = currentEpisode!!,
                                 controller = controller,
+                                isLiked = isLiked,
                                 onBack = { currentEpisode = null }
                             )
                         } else {
@@ -126,11 +132,13 @@ class MainActivity : ComponentActivity() {
                                     EpisodeList(
                                         episodes = state.episodes,
                                         playedStatuses = state.playedStatuses,
+                                        likedStatuses = state.likedStatuses,
                                         onEpisodeClick = { episode ->
                                             currentEpisode = episode
                                             viewModel.markAsPlayed(episode.id)
                                             controller?.apply {
-                                                setMediaItem(episode.toMediaItem(isPlayed = true))
+                                                val isLiked = state.likedStatuses[episode.id] == true
+                                                setMediaItem(episode.toMediaItem(isPlayed = true, isLiked = isLiked))
                                                 prepare()
                                                 play()
                                             }
@@ -153,6 +161,7 @@ class MainActivity : ComponentActivity() {
 fun PlayerScreen(
     episode: Episode,
     controller: MediaController?,
+    isLiked: Boolean,
     onBack: () -> Unit
 ) {
     var isPlaying by remember { mutableStateOf(controller?.isPlaying ?: false) }
@@ -207,7 +216,47 @@ fun PlayerScreen(
             textAlign = TextAlign.Center
         )
         
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Liked/Disliked Curation Buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = {
+                    controller?.sendCustomCommand(
+                        SessionCommand(PlaybackService.ACTION_THUMBS_DOWN, Bundle.EMPTY),
+                        Bundle.EMPTY
+                    )
+                    onBack()
+                },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.Default.ThumbDown, contentDescription = "Dislike")
+            }
+
+            Spacer(modifier = Modifier.width(32.dp))
+
+            IconButton(
+                onClick = {
+                    controller?.sendCustomCommand(
+                        SessionCommand(PlaybackService.ACTION_THUMBS_UP, Bundle.EMPTY),
+                        Bundle.EMPTY
+                    )
+                },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = if (isLiked) Icons.Default.ThumbUp else Icons.Outlined.ThumbUp,
+                    contentDescription = "Like",
+                    tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Progress Bar
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -290,6 +339,7 @@ fun formatTime(ms: Long): String {
 fun EpisodeList(
     episodes: List<Episode>,
     playedStatuses: Map<String, Boolean>,
+    likedStatuses: Map<String, Boolean>,
     onEpisodeClick: (Episode) -> Unit
 ) {
     LazyColumn {
@@ -297,6 +347,7 @@ fun EpisodeList(
             EpisodeRow(
                 episode = episode,
                 isPlayed = playedStatuses[episode.id] == true,
+                isLiked = likedStatuses[episode.id] == true,
                 onEpisodeClick = onEpisodeClick
             )
         }
@@ -307,10 +358,12 @@ fun EpisodeList(
 fun EpisodeRow(
     episode: Episode,
     isPlayed: Boolean,
+    isLiked: Boolean,
     onEpisodeClick: (Episode) -> Unit
 ) {
     // Clean up pubDate by removing common timezone strings for the Phone UI
     val cleanPubDate = episode.pubDate.replace(" +0000", "").replace(" GMT", "")
+    val likedIndicator = if (isLiked) " ❤️" else ""
 
     Card(
         modifier = Modifier
@@ -328,7 +381,7 @@ fun EpisodeRow(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = episode.title,
+                    text = "${episode.title}$likedIndicator",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,

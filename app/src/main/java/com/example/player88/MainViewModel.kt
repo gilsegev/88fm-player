@@ -14,7 +14,8 @@ sealed class MainUiState {
     object Loading : MainUiState()
     data class Success(
         val episodes: List<Episode>,
-        val playedStatuses: Map<String, Boolean>
+        val playedStatuses: Map<String, Boolean>,
+        val likedStatuses: Map<String, Boolean>
     ) : MainUiState()
     data class Error(val message: String) : MainUiState()
 }
@@ -30,12 +31,17 @@ class MainViewModel(
     val uiState: StateFlow<MainUiState> = combine(
         _episodes,
         dataRepository.getAllPlayedStatuses(),
+        dataRepository.getAllLikedStatuses(),
+        dataRepository.getDislikedIds(),
         _error
-    ) { episodes, statuses, error ->
+    ) { episodes, playedStatuses, likedStatuses, dislikedIds, error ->
         Log.d("MainViewModel", "Combining: episodes=${episodes?.size}, error=$error")
         when {
             error != null -> MainUiState.Error(error)
-            episodes != null -> MainUiState.Success(episodes, statuses)
+            episodes != null -> {
+                val filteredEpisodes = episodes.filter { !dislikedIds.contains(it.id) }
+                MainUiState.Success(filteredEpisodes, playedStatuses, likedStatuses)
+            }
             else -> MainUiState.Loading
         }
     }.stateIn(
